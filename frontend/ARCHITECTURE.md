@@ -1,0 +1,192 @@
+/\*\*
+
+- Frontend Architecture Documentation
+- =====================================
+-
+- DIRECTORY STRUCTURE:
+- ***
+-
+- src/
+- ├── common/ # Shared utilities and components
+- │ └── components/ # Reusable UI component library
+- │ ├── index.js # Central exports
+- │ ├── Button.jsx # Reusable button with variants
+- │ ├── Card.jsx # Card container component
+- │ ├── Typography.jsx # Text components (Heading, Paragraph, etc.)
+- │ ├── feedback.jsx # Badge, Skeleton, LoadingSpinner
+- │ ├── ErrorBoundary.jsx # Error handling wrapper
+- │ └── Layout.jsx # Container, Section, Stack, Grid, Flex
+- │
+- ├── design-system/ # Theme and design tokens
+- │ ├── theme.js # Color palette, typography, spacing, shadows
+- │ └── index.js # Animations, component variants, brand configs
+- │
+- ├── hooks/ # Custom React hooks
+- │ └── useAdvanced.js # Advanced hooks (useAsync, useFetch, useDebounce, etc.)
+- │
+- ├── services/ # API and external service integrations
+- │ ├── api.js # API client
+- │ └── socket.js # WebSocket client
+- │
+- ├── store/ # Redux state management
+- │ ├── store.js # Redux store configuration
+- │ ├── authSlice.js # Authentication state
+- │ └── sessionSlice.js # Session state
+- │
+- ├── features/ # Feature domain modules
+- │ ├── home/ # Landing page
+- │ ├── auth/ # Authentication pages
+- │ ├── candidate/ # Candidate assessment pages
+- │ └── recruiter/ # Recruiter dashboard pages
+- │
+- ├── routes/ # Routing configuration
+- │ ├── AppRouter.jsx # Main router component
+- │ └── ProtectedRoute.jsx # Authentication guard
+- │
+- ├── utils/ # Utility functions
+- │ ├── validators.js # Form validation
+- │ └── helpers.js # Helper functions
+- │
+- ├── App.jsx # Root component with providers
+- ├── index.css # Global Tailwind styles
+- └── main.jsx # React entry point
+-
+-
+- COMPONENT USAGE:
+- ***
+-
+- Import from centralized component library:
+-
+- import { Button, Card, Container, Section, Heading, Paragraph } from '@/common/components';
+- import { animations, buttonVariants, cardVariants } from '@/design-system';
+- import { useAsync, useFetch, useDebounce } from '@/hooks/useAdvanced';
+-
+-
+- STYLING APPROACH:
+- ***
+-
+- 1.  Tailwind CSS for utility classes
+- 2.  Design system tokens for theming
+- 3.  Component variants for consistent styling
+- 4.  Framer Motion for animations
+- 5.  Responsive design with mobile-first approach
+-
+-
+- KEY PATTERNS & BEST PRACTICES:
+- ***
+-
+- 1.  COMPONENT COMPOSITION:
+- - Small, focused, reusable components
+- - Props-based customization (variant, size, color)
+- - Compound components for complex UIs
+-
+- 2.  STATE MANAGEMENT:
+- - Redux for global state (auth, session)
+- - Local state for UI interactions
+- - Custom hooks for data fetching and async operations
+-
+- 3.  ERROR HANDLING:
+- - ErrorBoundary at app root and feature levels
+- - Graceful fallback UI
+- - Error logging to monitoring service
+-
+- 4.  PERFORMANCE OPTIMIZATION:
+- - Code splitting per feature
+- - useMemo for expensive calculations
+- - useCallback for stable function references
+- - Lazy loading with React.lazy()
+- - Image optimization and responsive images
+-
+- 5.  ACCESSIBILITY:
+- - Semantic HTML
+- - ARIA labels where needed
+- - Focus management
+- - Keyboard navigation support
+- - Color contrast compliance
+-
+- 6.  RESPONSIVE DESIGN:
+- - Breakpoints: xs (320px), sm (640px), md (768px), lg (1024px), xl (1280px), 2xl (1536px)
+- - useMediaQuery hook for responsive logic
+- - Mobile-first CSS approach
+- - Flexible grid system with Grid and Stack components
+-
+-
+- ANIMATION PATTERNS:
+- ***
+-
+- Framer Motion presets available in design-system/index.js:
+- - fadeIn, fadeInUp, fadeInDown, fadeInLeft, fadeInRight
+- - scaleIn
+- - slideInUp, slideInDown
+- - hoverScale, hoverLift
+- - containerStagger, itemStagger
+- - pulse, shimmer
+-
+- Usage:
+- <motion.div {...animations.fadeInUp}>Content</motion.div>
+-
+-
+- API INTEGRATION:
+- ***
+-
+- Data fetching with custom hooks:
+-
+- const { status, data, error } = useAsync(async () => {
+- return await api.fetchSomething();
+- });
+-
+- Or with the simpler fetch hook:
+-
+- const { data, loading, error } = useFetch('/api/endpoint');
+-
+-
+- FORM HANDLING:
+- ***
+-
+- Use the useFormReducer hook for complex forms:
+-
+- const { values, errors, touched, setField, setError, reset } = useFormReducer(initialValues);
+-
+-
+- TESTING GUIDELINES:
+- ***
+-
+- - Unit tests for utilities and hooks
+- - Component tests for isolated UI testing
+- - Integration tests for feature workflows
+- - E2E tests for critical user journeys
+-
+-
+- CONTRIBUTING:
+- ***
+-
+- 1.  Follow naming conventions:
+- - Components: PascalCase
+- - Functions/variables: camelCase
+- - Constants: UPPER_SNAKE_CASE
+-
+- 2.  Keep components small (<200 lines)
+- 3.  Extract logic into custom hooks
+- 4.  Use proper TypeScript (when migrating)
+- 5.  Add JSDoc comments for public APIs
+- 6.  Test before submitting PRs
+-
+-
+- PERFORMANCE TARGETS:
+- ***
+-
+- - Lighthouse score: 90+
+- - First Contentful Paint: <2s
+- - Largest Contentful Paint: <3s
+- - Cumulative Layout Shift: <0.1
+- - Bundle size: <300KB (gzipped)
+-
+-
+- KNOWN LIMITATIONS & TECH DEBT:
+- ***
+-
+- - Authentication system needs refresh token implementation
+- - Real-time updates via WebSocket need reconnection logic
+- - Some legacy components pending refactor
+- - Missing TypeScript types (planned for migration)
+- \*/
