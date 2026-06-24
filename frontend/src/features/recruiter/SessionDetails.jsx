@@ -299,6 +299,48 @@ export default function SessionDetails() {
                 </div>
               </div>
 
+              {/* ── CONCEPTUAL QUESTIONS & ANSWERS ── */}
+              {session.conceptualAnswers && session.conceptualAnswers.length > 0 && (
+                <div className="bg-[#0A0D18] border border-white/10 rounded-[2.5rem] p-8 shadow-2xl space-y-6">
+                  <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                    <Braces className="text-blue-500" size={22} />
+                    <h3 className="text-lg font-black text-white uppercase tracking-tight">Conceptual AI Verification</h3>
+                  </div>
+
+                  <div className="space-y-6">
+                    {session.conceptualAnswers.map((ans, idx) => (
+                      <div key={idx} className="space-y-3 pb-6 border-b border-white/5 last:border-0 last:pb-0">
+                        <div className="flex items-start gap-3">
+                          <span className="w-6 h-6 rounded bg-blue-500/10 text-blue-400 border border-blue-500/10 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                            {idx + 1}
+                          </span>
+                          <h4 className="text-white font-bold text-sm tracking-tight leading-snug">
+                            {ans.questionText}
+                          </h4>
+                        </div>
+
+                        <div className="p-5 bg-white/[0.01] border border-white/5 rounded-2xl">
+                          <div className="text-[9px] font-black uppercase tracking-widest text-gray-600 mb-2">Candidate's Answer</div>
+                          <p className="text-gray-300 text-xs leading-relaxed font-medium whitespace-pre-wrap">
+                            {ans.candidateAnswer || "No answer provided"}
+                          </p>
+                        </div>
+
+                        {ans.aiFeedback && (
+                          <div className="flex items-start gap-2.5 p-4 bg-blue-500/5 border border-blue-500/10 rounded-2xl text-[11px] text-blue-300 font-medium">
+                            <ShieldCheck size={14} className="text-blue-400 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-bold text-blue-400 uppercase tracking-wider text-[9px] block mb-0.5">AI Analysis Feedback</span>
+                              {ans.aiFeedback}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* ── CODE INTELLIGENCE (AST Analysis) ── */}
               {codeAnalysis && (
                 <div className="bg-[#0A0D18] border border-white/10 rounded-[2.5rem] p-8 shadow-2xl">

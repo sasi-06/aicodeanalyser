@@ -104,3 +104,21 @@ class ModelStatsOutput(BaseModel):
     real_samples: int
     synthetic_samples: int
     accuracy: float
+
+
+# ─── QUESTION GENERATION ─────────────────────────────────────────────────────
+
+class QuestionGenerationInput(BaseModel):
+    question_description: str
+    code: str
+    language: str
+
+
+class QuestionItem(BaseModel):
+    questionText: str
+    contextCodeSnippet: Optional[str] = ""
+
+
+class QuestionGenerationOutput(BaseModel):
+    questions: List[QuestionItem]
+

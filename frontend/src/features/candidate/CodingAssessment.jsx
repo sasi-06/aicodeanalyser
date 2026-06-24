@@ -54,7 +54,9 @@ export default function CodingAssessment() {
   const [language, setLanguage] = useState('python');
   const [code, setCode] = useState('');
   const [session, setSessionState] = useState(null);
-  const [phase, setPhase] = useState('select'); // select | coding | result
+  const [phase, setPhase] = useState('select'); // select | coding | result | conceptual
+  const [conceptualQuestions, setConceptualQuestions] = useState([]);
+  const [conceptualAnswers, setConceptualAnswers] = useState({});
   const [timer, setTimer] = useState(0);
   const [output, setOutput] = useState('');
   const [runLoading, setRunLoading] = useState(false);
@@ -390,15 +392,38 @@ export default function CodingAssessment() {
     }
   };
 
+  // Start conceptual step
+  const handleInitialSubmit = async () => {
+    if (!session) return;
+    setSubmitLoading(true);
+    try {
+      const { data } = await api.post(`/sessions/${session._id}/generate-conceptual`, { code });
+      if (data.questions && data.questions.length > 0) {
+        setConceptualQuestions(data.questions);
+        setPhase('conceptual');
+      } else {
+        await submitCode([]);
+      }
+    } catch (err) {
+      toast.error('Failed to generate conceptual questions. Proceeding to submit...');
+      await submitCode([]);
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
   // Final submission
-  const submitCode = async () => {
+  const submitCode = async (answers = []) => {
     if (!session) return;
     setSubmitLoading(true);
     flushTelemetry();
     if (flushRef.current) clearInterval(flushRef.current);
     
     try {
-      const { data } = await api.post(`/sessions/${session._id}/submit`, { code });
+      const { data } = await api.post(`/sessions/${session._id}/submit`, { 
+        code, 
+        conceptualAnswers: answers 
+      });
       setResult(data);
       dispatch(setSubmissionResult(data));
       setPhase('result');
@@ -408,6 +433,22 @@ export default function CodingAssessment() {
     } finally {
       setSubmitLoading(false);
     }
+  };
+
+  const handleConceptualSubmit = async (e) => {
+    if (e) e.preventDefault();
+    const answersList = conceptualQuestions.map(q => ({
+      questionText: q.questionText,
+      candidateAnswer: conceptualAnswers[q.questionText] || ''
+    }));
+    
+    // Check if any answers are empty
+    const emptyCount = answersList.filter(a => !a.candidateAnswer.trim()).length;
+    if (emptyCount > 0) {
+      return toast.error('Please answer all questions before submitting.');
+    }
+
+    await submitCode(answersList);
   };
 
   const handleDownloadReport = async () => {
@@ -549,6 +590,74 @@ export default function CodingAssessment() {
     );
   }
 
+  // ── PHASE: CONCEPTUAL QUESTIONS ──
+  if (phase === 'conceptual') {
+    return (
+      <div className="min-h-screen bg-[#020817] pt-24 pb-12 px-6 flex flex-col items-center">
+        <Navbar />
+        <div className="max-w-3xl w-full">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-10">
+            <h1 className="text-4xl font-black text-white tracking-tighter mb-4 flex items-center justify-center gap-3">
+              <Brain className="text-blue-500 animate-pulse" size={36} />
+              AI Code Verification
+            </h1>
+            <p className="text-gray-400 text-base leading-relaxed">
+              Our AI service has analyzed your submitted code line-by-line and generated custom questions specific to your logic. Please answer them to complete your assessment.
+            </p>
+          </motion.div>
+
+          <form onSubmit={handleConceptualSubmit} className="space-y-6">
+            {conceptualQuestions.map((q, idx) => (
+              <motion.div 
+                key={idx}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.15 }}
+                className="bg-white/[0.03] border border-white/10 rounded-3xl p-8 backdrop-blur-sm"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 font-bold flex items-center justify-center text-sm border border-blue-500/20">
+                    {idx + 1}
+                  </span>
+                  {q.contextCodeSnippet && (
+                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 bg-white/5 px-2.5 py-1 rounded border border-white/5">
+                      Context: {q.contextCodeSnippet}
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-white font-bold text-lg mb-4 tracking-tight leading-snug">
+                  {q.questionText}
+                </h3>
+                <textarea
+                  required
+                  rows={4}
+                  value={conceptualAnswers[q.questionText] || ''}
+                  onChange={(e) => setConceptualAnswers({
+                    ...conceptualAnswers,
+                    [q.questionText]: e.target.value
+                  })}
+                  placeholder="Type your explanation here (be specific and detailed)..."
+                  className="w-full rounded-2xl bg-black/40 border border-white/10 p-5 text-gray-200 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all placeholder:text-gray-600 font-medium leading-relaxed"
+                />
+              </motion.div>
+            ))}
+
+            <div className="flex items-center justify-end gap-4 pt-4">
+              <button 
+                type="submit"
+                disabled={submitLoading}
+                className="px-10 py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50 hover:from-blue-700 hover:to-indigo-700 transition-all shadow-xl shadow-blue-500/20"
+              >
+                {submitLoading ? <Loader size={20} className="spin" /> : <Send size={20} />}
+                Submit Assessment Answers
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   // ── PHASE 2: RESULT ──
   if (phase === 'result' && result) {
     const score = result.prediction?.authenticityScore ?? 0;
@@ -685,7 +794,7 @@ export default function CodingAssessment() {
             </button>
 
             <button 
-              onClick={submitCode} 
+              onClick={handleInitialSubmit} 
               disabled={submitLoading}
               className="px-6 py-2.5 rounded-xl bg-blue-600 text-white font-black hover:bg-blue-700 disabled:opacity-50 transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
             >

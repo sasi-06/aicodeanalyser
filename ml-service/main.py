@@ -17,8 +17,10 @@ from schemas import (
     CodeAnalysisInput, CodeAnalysisOutput,
     RetrainRequest, RetrainResponse,
     ModelStatsOutput,
+    QuestionGenerationInput, QuestionGenerationOutput,
 )
 from code_analyzer import analyze_code
+from question_generator import generate_conceptual_questions
 
 app = FastAPI(title="AI Coding Behavior ML Service", version="2.0.0")
 
@@ -380,3 +382,18 @@ def model_stats():
         synthetic_samples=stats.get("synthetic_samples", 0),
         accuracy=stats.get("accuracy", 0.0),
     )
+
+
+@app.post("/generate-questions", response_model=QuestionGenerationOutput)
+def generate_questions(payload: QuestionGenerationInput):
+    """Generate 2 unique conceptual questions based on code and task description."""
+    try:
+        questions = generate_conceptual_questions(
+            question_desc=payload.question_description,
+            code=payload.code,
+            language=payload.language
+        )
+        return QuestionGenerationOutput(questions=questions)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

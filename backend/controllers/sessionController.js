@@ -7,7 +7,7 @@ const User             = require('../models/User');
 const Assessment       = require('../models/Assessment');
 
 const { extractFeatures, detectAlerts }  = require('../utils/featureExtractor');
-const { predictAuthenticity }            = require('../services/mlService');
+const { predictAuthenticity, generateConceptualQuestions } = require('../services/mlService');
 const { analyzeCode }                    = require('../services/codeAnalysisService');
 const { runTestCases }                   = require('../services/executionService');
 const { generateReport }                 = require('../services/pdfService');
@@ -67,7 +67,7 @@ const startSession = async (req, res) => {
 
 const submitSession = async (req, res) => {
   try {
-    const { code } = req.body;
+    const { code, conceptualAnswers } = req.body;
     const session = await InterviewSession.findById(req.params.id).populate('question candidate');
     if (!session) return res.status(404).json({ message: 'Session not found' });
 
@@ -145,6 +145,18 @@ const submitSession = async (req, res) => {
     session.codeQualityScore    = codeQualityScore;
     session.finalScore          = finalScore;
     session.updatedAt           = new Date();
+
+    if (conceptualAnswers && Array.isArray(conceptualAnswers)) {
+      session.conceptualAnswers = conceptualAnswers.map(ans => ({
+        questionText: ans.questionText,
+        candidateAnswer: ans.candidateAnswer || '',
+        aiFeedback: (ans.candidateAnswer || '').trim().length > 30 
+          ? "Detailed explanation provided. Awaiting recruiter verification."
+          : "Short response provided. Review recommended.",
+        score: null
+      }));
+    }
+
     await session.save();
 
     // ── 10. Generate PDF report ────────────────────────────────────────────────
@@ -311,7 +323,33 @@ const startSessionFromAssessment = async (req, res) => {
   }
 };
 
+const generateQuestionsForSession = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { code } = req.body;
+
+    const session = await InterviewSession.findById(id).populate('question');
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+
+    // Generate questions if not already generated
+    if (!session.aiGeneratedQuestions || session.aiGeneratedQuestions.length === 0) {
+      const generated = await generateConceptualQuestions(
+        session.question.description,
+        code || '',
+        session.language
+      );
+      session.aiGeneratedQuestions = generated;
+      session.finalCode = code || ''; // Save intermediate code state
+      await session.save();
+    }
+
+    res.json({ questions: session.aiGeneratedQuestions });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   startSession, submitSession, getMySessions, getSession, downloadReport,
-  getMyAssessments, startSessionFromAssessment,
+  getMyAssessments, startSessionFromAssessment, generateQuestionsForSession,
 };

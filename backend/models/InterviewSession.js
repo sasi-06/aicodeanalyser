@@ -37,6 +37,22 @@ const interviewSessionSchema = new mongoose.Schema({
   // Recruiter review
   recruiterNotes:    { type: String, default: '' },
 
+  // Dynamic AI-Generated Questions
+  aiGeneratedQuestions: [
+    {
+      questionText: { type: String, required: true },
+      contextCodeSnippet: { type: String, default: '' }
+    }
+  ],
+  conceptualAnswers: [
+    {
+      questionText: { type: String, required: true },
+      candidateAnswer: { type: String, default: '' },
+      aiFeedback: { type: String, default: '' },
+      score: { type: Number, default: null }
+    }
+  ],
+
   reportGenerated:   { type: Boolean, default: false },
   reportPath:        { type: String, default: '' },
   createdAt:         { type: Date, default: Date.now },
