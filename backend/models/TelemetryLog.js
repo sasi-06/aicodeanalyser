@@ -18,6 +18,7 @@ const telemetryLogSchema = new mongoose.Schema({
   totalBackspaces: { type: Number, default: 0 },
   totalTabSwitches: { type: Number, default: 0 },
   totalBlurEvents: { type: Number, default: 0 },
+  totalOffScreenEvents: { type: Number, default: 0 },
   totalIdleTime: { type: Number, default: 0 }, // ms
   totalActiveTime: { type: Number, default: 0 }, // ms
   compilationCount: { type: Number, default: 0 },

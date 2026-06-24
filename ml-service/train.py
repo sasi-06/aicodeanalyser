@@ -66,7 +66,7 @@ def generate_dataset(n=2000):
     return pd.DataFrame(records)
 
 def train():
-    print("📊 Generating synthetic dataset...")
+    print("[INFO] Generating synthetic dataset...")
     df = generate_dataset(3000)
 
     feature_cols = [
@@ -86,7 +86,7 @@ def train():
     X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
 
     # Train Random Forest
-    print("🌲 Training Random Forest Classifier...")
+    print("[INFO] Training Random Forest Classifier...")
     model = RandomForestClassifier(
         n_estimators=100,
         max_depth=10,
@@ -99,7 +99,7 @@ def train():
     # Evaluate
     y_pred = model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
-    print(f"✅ Model Accuracy: {acc * 100:.2f}%")
+    print(f"[OK] Model Accuracy: {acc * 100:.2f}%")
     print(classification_report(y_test, y_pred, target_names=['Suspicious', 'Review Needed', 'Genuine']))
 
     # Save model and scaler
@@ -107,7 +107,7 @@ def train():
     joblib.dump(model, 'model/model.pkl')
     joblib.dump(scaler, 'model/scaler.pkl')
     joblib.dump(feature_cols, 'model/features.pkl')
-    print("💾 Model saved to model/model.pkl")
+    print("[OK] Model saved to model/model.pkl")
 
 if __name__ == '__main__':
     train()

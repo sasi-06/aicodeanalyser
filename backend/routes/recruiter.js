@@ -5,6 +5,7 @@ const {
   createQuestion, getQuestions, deleteQuestion,
   createAssessment, getAssessments, getAssessmentById, updateAssessment, addQuestionsToAssessment, removeQuestionFromAssessment,
   updateSessionReview,
+  getModelStats, retrainModel,
 } = require('../controllers/recruiterController');
 
 // Dashboard
@@ -26,5 +27,9 @@ router.post('/assessments', protect, requireRole('recruiter', 'admin'), createAs
 router.put('/assessments/:id', protect, requireRole('recruiter', 'admin'), updateAssessment);
 router.post('/assessments/:id/questions', protect, requireRole('recruiter', 'admin'), addQuestionsToAssessment);
 router.delete('/assessments/:id/questions/:questionId', protect, requireRole('recruiter', 'admin'), removeQuestionFromAssessment);
+
+// AI Model — self-learning
+router.get('/model-stats', protect, requireRole('recruiter', 'admin'), getModelStats);
+router.post('/retrain', protect, requireRole('recruiter', 'admin'), retrainModel);
 
 module.exports = router;

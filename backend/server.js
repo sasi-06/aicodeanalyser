@@ -11,7 +11,13 @@ const { setupSocket } = require('./socket/telemetryHandler');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: process.env.FRONTEND_URL || 'http://localhost:5173', methods: ['GET', 'POST'] },
+  cors: {
+    origin: (origin, cb) => {
+      if (!origin || /^http:\/\/localhost:\d+$/.test(origin)) return cb(null, true);
+      cb(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'POST'],
+  },
   pingTimeout: 60000,
 });
 
@@ -21,9 +27,14 @@ app.set('io', io);
 // Connect DB
 connectDB();
 
-// Middleware
+// Middleware — allow any localhost port (handles Vite starting on 5174 when 5173 is busy)
+const allowedOrigin = (origin, cb) => {
+  if (!origin || /^http:\/\/localhost:\d+$/.test(origin)) return cb(null, true);
+  cb(new Error('Not allowed by CORS'));
+};
+
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
+app.use(cors({ origin: allowedOrigin, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 

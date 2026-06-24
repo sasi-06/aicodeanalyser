@@ -8,6 +8,7 @@ const extractFeatures = (telemetry, durationSeconds) => {
     totalPasteChars = 0,
     totalBackspaces = 0,
     totalBlurEvents = 0,
+    totalOffScreenEvents = 0,
     totalIdleTime = 0,
     totalActiveTime = 1,
     compilationCount = 0,
@@ -47,6 +48,9 @@ const extractFeatures = (telemetry, durationSeconds) => {
   // Focus loss events
   const focus_loss_count = totalBlurEvents;
 
+  // Off screen gaze events
+  const off_screen_events_count = totalOffScreenEvents;
+
   // Backspace ratio: backspaces vs total keystrokes
   const backspace_ratio = totalCharsTyped > 0 ? totalBackspaces / totalCharsTyped : 0;
 
@@ -60,6 +64,7 @@ const extractFeatures = (telemetry, durationSeconds) => {
     code_growth_rate: parseFloat(code_growth_rate.toFixed(4)),
     idle_ratio: parseFloat(Math.min(idle_ratio, 1).toFixed(4)),
     focus_loss_count,
+    off_screen_events_count,
     backspace_ratio: parseFloat(backspace_ratio.toFixed(4)),
   };
 };
@@ -77,6 +82,7 @@ const computeFallbackScore = (features) => {
     error_frequency,
     idle_ratio,
     focus_loss_count,
+    off_screen_events_count = 0,
   } = features;
 
   // Score each feature 0-100
@@ -87,15 +93,17 @@ const computeFallbackScore = (features) => {
   const compileScore = Math.min(100, compile_attempts * 15);
   const idleScore = Math.max(0, 100 - idle_ratio * 200);
   const focusScore = Math.max(0, 100 - focus_loss_count * 15);
+  const offScreenScore = Math.max(0, 100 - off_screen_events_count * 20);
 
   const score =
-    0.25 * typingScore +
-    0.20 * pauseScore +
+    0.20 * typingScore +
+    0.15 * pauseScore +
     0.20 * pasteScore +
     0.15 * editScore +
     0.10 * compileScore +
     0.05 * idleScore +
-    0.05 * focusScore;
+    0.05 * focusScore +
+    0.10 * offScreenScore;
 
   const finalScore = Math.round(Math.min(100, Math.max(0, score)));
 
@@ -112,7 +120,7 @@ const computeFallbackScore = (features) => {
  */
 const detectAlerts = (telemetry) => {
   const alerts = [];
-  const { totalPasteChars = 0, totalBlurEvents = 0, totalIdleTime = 0, totalPasteCount = 0, events = [] } = telemetry;
+  const { totalPasteChars = 0, totalBlurEvents = 0, totalOffScreenEvents = 0, totalIdleTime = 0, totalPasteCount = 0, events = [] } = telemetry;
 
   if (totalPasteChars > 200) {
     alerts.push({ type: 'large_paste', severity: 'high', message: `Large code block pasted (${totalPasteChars} chars)` });
@@ -125,6 +133,9 @@ const detectAlerts = (telemetry) => {
   }
   if (totalPasteCount > 3) {
     alerts.push({ type: 'suspicious_pattern', severity: 'high', message: `${totalPasteCount} paste events detected` });
+  }
+  if (totalOffScreenEvents > 0) {
+    alerts.push({ type: 'off_screen_gaze', severity: 'high', message: `Candidate looked away from screen ${totalOffScreenEvents} time(s)` });
   }
 
   return alerts;

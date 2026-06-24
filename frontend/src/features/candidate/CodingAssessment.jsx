@@ -3,6 +3,9 @@ import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as tf from '@tensorflow/tfjs-core';
+import '@tensorflow/tfjs-backend-webgl';
+import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
 import { 
   Play, 
   Send, 
@@ -69,6 +72,8 @@ export default function CodingAssessment() {
   const [userInput, setUserInput] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [recentSessions, setRecentSessions] = useState([]);
+  const [assignedQuestions, setAssignedQuestions] = useState(new Set());
+  const [cameraDenied, setCameraDenied] = useState(false);
 
   // Refs for telemetry & socket
   const sessionRef = useRef(null);
@@ -78,40 +83,10 @@ export default function CodingAssessment() {
   const socketRef = useRef(null);
   const timerRef = useRef(null);
   const flushRef = useRef(null);
-
-  // Load questions and previous sessions
-  useEffect(() => {
-    const fetchData = async () => {
-       try {
-          const [qRes, sRes] = await Promise.all([
-             api.get('/questions'),
-             api.get('/sessions/my')
-          ]);
-          
-          const questionsArr = Array.isArray(qRes.data?.questions) ? qRes.data.questions : (Array.isArray(qRes.data) ? qRes.data : []);
-          setQuestions(questionsArr);
-          setRecentSessions(sRes.data);
-          if (questionsArr.length > 0) setSelectedQ(questionsArr[0]);
-       } catch (e) {
-          console.error('Failed to load assessment data');
-       }
-    };
-    fetchData();
-  }, []);
-
-  // Timer logic
-  useEffect(() => {
-    if (phase === 'coding') {
-      timerRef.current = setInterval(() => setTimer((t) => t + 1), 1000);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [phase]);
-
-  const formatTimer = (s) => {
-    const mins = Math.floor(s / 60);
-    const secs = s % 60;
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
+  const videoRef = useRef(null);
+  const faceModelRef = useRef(null);
+  const gazeLoopRef = useRef(null);
+  const cameraStreamRef = useRef(null);
 
   // Telemetry: Flush batch to server
   const flushTelemetry = useCallback(() => {
@@ -129,6 +104,129 @@ export default function CodingAssessment() {
     const timestamp = Date.now() - startTimeRef.current;
     telemetryBatch.current.push({ type, timestamp, data });
   }, []);
+
+  // Load questions and previous sessions
+  useEffect(() => {
+    const fetchData = async () => {
+       try {
+          const [qRes, sRes, aRes] = await Promise.all([
+             api.get('/questions'),
+             api.get('/sessions/my'),
+             api.get('/sessions/assessments/my')
+          ]);
+          
+          const rawQuestions = Array.isArray(qRes.data?.questions) ? qRes.data.questions : (Array.isArray(qRes.data) ? qRes.data : []);
+          const sessions = sRes.data || [];
+          const assessments = aRes.data || [];
+          
+          const completedQIds = new Set(
+            sessions
+              .filter(s => ['submitted', 'evaluated'].includes(s.status))
+              .map(s => s.question?._id)
+          );
+          
+          const assignedQIds = new Set();
+          assessments.forEach(a => {
+             if (Array.isArray(a.questions)) {
+                a.questions.forEach(q => {
+                   if (q && q._id) assignedQIds.add(q._id);
+                });
+             }
+          });
+          
+          const sortedQuestions = [...rawQuestions].sort((a, b) => {
+             const aComp = completedQIds.has(a._id);
+             const bComp = completedQIds.has(b._id);
+             if (aComp && !bComp) return 1;
+             if (!aComp && bComp) return -1;
+             
+             const aAssign = assignedQIds.has(a._id);
+             const bAssign = assignedQIds.has(b._id);
+             if (aAssign && !bAssign) return -1;
+             if (!aAssign && bAssign) return 1;
+             
+             return 0;
+          });
+
+          setQuestions(sortedQuestions);
+          setRecentSessions(sessions);
+          setAssignedQuestions(assignedQIds);
+          if (sortedQuestions.length > 0) setSelectedQ(sortedQuestions[0]);
+       } catch (e) {
+          console.error('Failed to load assessment data');
+       }
+    };
+    fetchData();
+  }, []);
+
+  // Timer logic
+  useEffect(() => {
+    if (phase === 'coding') {
+      timerRef.current = setInterval(() => setTimer((t) => t + 1), 1000);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [phase]);
+
+  // AI Eye-Tracking / Gaze Detection
+  useEffect(() => {
+    if (phase !== 'coding') return;
+    let offScreenCount = 0;
+    let isActive = true;
+
+    const startEyeTracking = async () => {
+      try {
+        const stream = cameraStreamRef.current || await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
+        
+        const model = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
+        const detectorConfig = { runtime: 'tfjs', maxFaces: 1, refineLandmarks: false };
+        faceModelRef.current = await faceLandmarksDetection.createDetector(model, detectorConfig);
+        
+        const detectGaze = async () => {
+          if (!isActive || !videoRef.current || !faceModelRef.current) return;
+          
+          if (videoRef.current.readyState === 4) {
+             const faces = await faceModelRef.current.estimateFaces(videoRef.current);
+             if (faces.length === 0) {
+               offScreenCount++;
+             } else {
+               offScreenCount = Math.max(0, offScreenCount - 1);
+             }
+             
+             if (offScreenCount > 30) {
+                addEvent('off_screen_gaze', {});
+                offScreenCount = 0; // reset
+             }
+          }
+          if (isActive) gazeLoopRef.current = requestAnimationFrame(detectGaze);
+        };
+        detectGaze();
+      } catch (err) {
+        console.warn("Camera access denied or model failed.");
+        addEvent('camera_denied', {});
+        setCameraDenied(true);
+      }
+    };
+
+    startEyeTracking();
+
+    return () => {
+      isActive = false;
+      if (gazeLoopRef.current) cancelAnimationFrame(gazeLoopRef.current);
+      if (videoRef.current?.srcObject) {
+         videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, [phase, addEvent]);
+
+  const formatTimer = (s) => {
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   // Setup Socket.io for live proctoring & notifications
   const setupSocket = useCallback((sess) => {
@@ -156,6 +254,14 @@ export default function CodingAssessment() {
     // UI check for existing sessions (redundant but good UX)
     if (recentSessions.some(s => s.question?._id === selectedQ._id && ['submitted', 'evaluated'].includes(s.status))) {
        return toast.error('Check evaluation history: You have already submitted this challenge.');
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      cameraStreamRef.current = stream;
+    } catch (err) {
+      toast.error('Camera access is required to take this assessment. Please allow camera access.');
+      return;
     }
 
     try {
@@ -337,18 +443,36 @@ export default function CodingAssessment() {
               <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-8 backdrop-blur-sm">
                 <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-6 px-1">Choose Challenge</h3>
                 <div className="space-y-4">
-                  {questions.map((q) => (
+                  {questions.map((q, index) => {
+                    const isCompleted = recentSessions.some(s => s.question?._id === q._id && ['submitted', 'evaluated'].includes(s.status));
+                    const isAssigned = assignedQuestions.has(q._id) && !isCompleted;
+                    const isNewestUncompleted = index === 0 && !isCompleted && !isAssigned;
+                    return (
                     <div 
                       key={q._id} 
                       onClick={() => setSelectedQ(q)}
-                      className={`group flex items-center gap-4 p-5 rounded-2xl border transition-all cursor-pointer ${
+                      className={`group flex items-center gap-4 p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden ${
                         selectedQ?._id === q._id 
                         ? 'bg-blue-600/10 border-blue-500/50' 
+                        : isAssigned
+                        ? 'bg-gradient-to-r from-purple-500/10 to-fuchsia-500/10 border-purple-500/40 hover:border-purple-500/60 shadow-[0_0_20px_rgba(168,85,247,0.15)]'
+                        : isNewestUncompleted
+                        ? 'bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border-emerald-500/40 hover:border-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
                         : 'bg-white/5 border-white/5 hover:border-white/20'
                       }`}
                     >
+                      {isAssigned && (
+                         <div className="absolute top-0 right-0 bg-gradient-to-r from-purple-500 to-fuchsia-500 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl shadow-lg z-10">
+                            Assigned Lab
+                         </div>
+                      )}
+                      {!isAssigned && isNewestUncompleted && (
+                         <div className="absolute top-0 right-0 bg-gradient-to-r from-emerald-500 to-blue-500 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl shadow-lg z-10">
+                            New Available
+                         </div>
+                      )}
                       <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg ${
-                        selectedQ?._id === q._id ? 'bg-blue-600' : 'bg-white/10 text-gray-400 group-hover:text-white'
+                        selectedQ?._id === q._id ? 'bg-blue-600' : isAssigned ? 'bg-purple-500/20 text-purple-400' : isNewestUncompleted ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-gray-400 group-hover:text-white'
                       }`}>
                         {q.title?.charAt(0) || 'C'}
                       </div>
@@ -371,7 +495,7 @@ export default function CodingAssessment() {
                          )}
                       </div>
                     </div>
-                  ))}
+                  );})}
                 </div>
               </div>
             </div>
@@ -520,7 +644,19 @@ export default function CodingAssessment() {
   const activeMonacoLang = LANGUAGES.find(l => l.value === language)?.monacoLang || 'python';
 
   return (
-    <div className="h-screen bg-[#020817] flex flex-col overflow-hidden">
+    <div className="h-screen bg-[#020817] flex flex-col overflow-hidden relative">
+      {cameraDenied && phase === 'coding' && (
+        <div className="absolute inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center">
+          <div className="bg-[#0A0D18] border border-red-500/30 p-10 rounded-3xl max-w-lg text-center shadow-2xl">
+            <AlertTriangle className="text-red-500 mx-auto mb-6" size={56} />
+            <h2 className="text-2xl font-black text-white mb-3 tracking-tight">Camera Access Revoked</h2>
+            <p className="text-gray-400 text-sm font-medium leading-relaxed">
+              You must allow camera access for proctoring to continue your assessment. Please enable it in your browser settings and refresh the page.
+            </p>
+          </div>
+        </div>
+      )}
+      <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
       <Navbar />
 
       {/* Proctoring Header */}

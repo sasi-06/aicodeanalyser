@@ -3,22 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Users,
-  BarChart3,
-  AlertTriangle,
-  Search,
-  ChevronRight,
-  Plus,
-  Clock,
-  FileText,
-  ShieldCheck,
-  MoreVertical,
-  Filter,
-  RefreshCw,
-  Mail,
-  Zap,
-  CheckCircle2,
-  Download
+  Users, BarChart3, AlertTriangle, Search, ChevronRight, Plus, Clock,
+  FileText, ShieldCheck, MoreVertical, Filter, RefreshCw, Mail, Zap,
+  CheckCircle2, Download, Brain, TrendingUp, Database, RotateCcw, Sparkles
 } from 'lucide-react';
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell
@@ -27,6 +14,7 @@ import Navbar from '../../components/Navbar';
 import Sidebar from '../../components/Sidebar';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
+
 
 const MOCK_STATS = [
   { name: 'Total Assessments', value: '1,284', icon: FileText, color: 'text-blue-500', bg: 'bg-blue-500/10' },
@@ -51,6 +39,8 @@ export default function RecruiterDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [dashboardData, setDashboardData] = useState({ stats: {}, recentSessions: [] });
+  const [modelStats, setModelStats] = useState(null);
+  const [isRetraining, setIsRetraining] = useState(false);
 
   const handleDownloadReport = async (sessionId) => {
     try {
@@ -67,17 +57,40 @@ export default function RecruiterDashboard() {
     }
   };
 
+  const handleRetrain = async (forceWithSynthetic = false) => {
+    setIsRetraining(true);
+    try {
+      const { data } = await api.post('/recruiter/retrain', { forceWithSynthetic, syntheticBoost: 500 });
+      toast.success(`✅ Model retrained! Accuracy: ${data.accuracy}% (${data.real_samples} real + ${data.synthetic_samples} synthetic samples)`);
+      // Refresh model stats
+      const statsRes = await api.get('/recruiter/model-stats');
+      setModelStats(statsRes.data);
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Retrain failed';
+      if (msg.includes('No labeled training data')) {
+        toast('No labeled data yet. Using synthetic data only...', { icon: '⚠️' });
+        handleRetrain(true);
+      } else {
+        toast.error(msg);
+      }
+    } finally {
+      setIsRetraining(false);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [candRes, sessRes, dashRes] = await Promise.all([
+        const [candRes, sessRes, dashRes, statsRes] = await Promise.all([
           api.get('/recruiter/candidates'),
           api.get('/recruiter/sessions'),
-          api.get('/recruiter/dashboard')
+          api.get('/recruiter/dashboard'),
+          api.get('/recruiter/model-stats'),
         ]);
         setCandidates(candRes.data || []);
         setSessions(sessRes.data.sessions || []);
         setDashboardData(dashRes.data);
+        setModelStats(statsRes.data);
       } catch (err) {
         toast.error('Failed to synchronize dashboard intelligence');
       } finally {
@@ -86,6 +99,7 @@ export default function RecruiterDashboard() {
     };
     fetchData();
   }, []);
+
 
   const safeSessions = Array.isArray(sessions) ? sessions : [];
 
@@ -199,6 +213,113 @@ export default function RecruiterDashboard() {
               </div>
             </div>
           </div>
+
+          {/* ── AI MODEL HEALTH ────────────────────────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="bg-gradient-to-br from-[#0D0F1E] to-[#0A0D18] border border-purple-500/20 rounded-[2.5rem] p-8 mb-10 shadow-2xl"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                  <Brain className="text-purple-400" size={26} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-white tracking-tight">AI Model Intelligence</h3>
+                  <p className="text-gray-500 text-sm font-medium">Self-learning engine powered by recruiter feedback</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-black uppercase tracking-widest ${
+                  modelStats?.mlService?.model_loaded
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    modelStats?.mlService?.model_loaded ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'
+                  }`} />
+                  {modelStats?.mlService?.model_loaded ? 'Model Online' : 'Model Offline'}
+                </div>
+                <button
+                  onClick={() => handleRetrain()}
+                  disabled={isRetraining}
+                  className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-black uppercase tracking-widest text-xs rounded-xl transition-all shadow-lg shadow-purple-500/20"
+                >
+                  {isRetraining
+                    ? <><RotateCcw size={14} className="animate-spin" /> Retraining...</>
+                    : <><Sparkles size={14} /> Retrain Model</>
+                  }
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+              {[
+                {
+                  icon: Database,
+                  label: 'Training Samples',
+                  value: modelStats?.trainingData?.total ?? '—',
+                  sub: `${modelStats?.trainingData?.genuine || 0} Genuine · ${modelStats?.trainingData?.suspicious || 0} Suspicious`,
+                  color: 'text-blue-400',
+                  bg: 'bg-blue-500/10 border-blue-500/20',
+                },
+                {
+                  icon: TrendingUp,
+                  label: 'Model Accuracy',
+                  value: modelStats?.mlService?.accuracy ? `${modelStats.mlService.accuracy}%` : `${modelStats?.trainingData?.modelAccuracyOnRealData || 0}%`,
+                  sub: 'On labeled real data',
+                  color: 'text-emerald-400',
+                  bg: 'bg-emerald-500/10 border-emerald-500/20',
+                },
+                {
+                  icon: Brain,
+                  label: 'Model Type',
+                  value: modelStats?.mlService?.model_type?.replace('Classifier', '') || 'GradientBoosting',
+                  sub: `${modelStats?.mlService?.feature_count || 11} features`,
+                  color: 'text-purple-400',
+                  bg: 'bg-purple-500/10 border-purple-500/20',
+                },
+                {
+                  icon: Clock,
+                  label: 'Last Retrained',
+                  value: modelStats?.mlService?.last_trained
+                    ? new Date(modelStats.mlService.last_trained).toLocaleDateString()
+                    : 'Never',
+                  sub: modelStats?.mlService?.last_trained
+                    ? new Date(modelStats.mlService.last_trained).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : 'Retrain to improve accuracy',
+                  color: 'text-yellow-400',
+                  bg: 'bg-yellow-500/10 border-yellow-500/20',
+                },
+              ].map((m, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 * i }}
+                  className={`p-5 rounded-2xl border ${m.bg} flex flex-col gap-3`}
+                >
+                  <m.icon className={m.color} size={20} />
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">{m.label}</div>
+                    <div className={`text-xl font-black ${m.color}`}>{m.value}</div>
+                    <div className="text-[10px] text-gray-600 mt-0.5">{m.sub}</div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
+            {modelStats?.trainingData?.total === 0 && (
+              <div className="mt-6 p-4 bg-yellow-500/5 border border-yellow-500/10 rounded-2xl flex items-center gap-3">
+                <AlertTriangle size={16} className="text-yellow-500 shrink-0" />
+                <p className="text-yellow-400 text-sm font-medium">
+                  No real training data yet. <span className="font-black">Review and confirm sessions</span> to build your training dataset, then click Retrain Model.
+                </p>
+              </div>
+            )}
+          </motion.div>
 
           {/* Detailed Table Section */}
           <div className="bg-[#0A0D18] border border-white/10 rounded-[3rem] overflow-hidden shadow-2xl">

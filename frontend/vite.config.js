@@ -17,5 +17,8 @@ export default defineConfig({
       '@store': path.resolve(__dirname, './src/store'),
       '@utils': path.resolve(__dirname, './src/utils'),
     }
+  },
+  optimizeDeps: {
+    include: ['recharts', 'decimal.js-light']
   }
 })

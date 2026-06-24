@@ -1,11 +1,18 @@
 const InterviewSession = require('../models/InterviewSession');
-const MLPrediction = require('../models/MLPrediction');
-const Alert = require('../models/Alert');
-const TelemetryLog = require('../models/TelemetryLog');
-const User = require('../models/User');
-const Question = require('../models/Question');
-const Assessment = require('../models/Assessment');
-const Notification = require('../models/Notification');
+const MLPrediction     = require('../models/MLPrediction');
+const Alert            = require('../models/Alert');
+const TelemetryLog     = require('../models/TelemetryLog');
+const User             = require('../models/User');
+const Question         = require('../models/Question');
+const Assessment       = require('../models/Assessment');
+const Notification     = require('../models/Notification');
+const TrainingData     = require('../models/TrainingData');
+const axios            = require('axios');
+
+const ML_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
+
+// Numeric label map for ML training
+const LABEL_MAP = { 'Genuine': 2, 'Review Needed': 1, 'Suspicious': 0 };
 
 // GET /api/recruiter/dashboard
 const getDashboard = async (req, res) => {
@@ -366,22 +373,149 @@ const removeQuestionFromAssessment = async (req, res) => {
 };
 
 // PUT /api/recruiter/sessions/:id/review
+// Also saves a TrainingData document for the self-learning ML loop
 const updateSessionReview = async (req, res) => {
   try {
     const { classification, notes, status } = req.body;
     const session = await InterviewSession.findById(req.params.id);
     if (!session) return res.status(404).json({ message: 'Session not found' });
 
-    if (classification) session.classification = classification;
-    if (notes) session.recruiterNotes = notes;
-    if (status) session.status = status;
-    
+    if (classification) {
+      session.classification = classification;
+      session.humanLabel     = classification;   // ground-truth label for ML
+    }
+    if (notes)   session.recruiterNotes = notes;
+    if (status)  session.status         = status;
     session.updatedAt = new Date();
     await session.save();
+
+    // ── Save training data sample (self-learning loop) ─────────────────────
+    if (classification) {
+      try {
+        const mlPrediction = await MLPrediction.findOne({ session: session._id });
+
+        // Only create a new training sample if one doesn't already exist for this session
+        const existing = await TrainingData.findOne({ session: session._id });
+        if (!existing && mlPrediction) {
+          const numericLabel = LABEL_MAP[classification] ?? 1;
+
+          await TrainingData.create({
+            session:   session._id,
+            candidate: session.candidate,
+            behavioralFeatures: {
+              typing_speed:            mlPrediction.features?.typing_speed            || 0,
+              average_pause_duration:  mlPrediction.features?.average_pause_duration  || 0,
+              paste_ratio:             mlPrediction.features?.paste_ratio             || 0,
+              edit_frequency:          mlPrediction.features?.edit_frequency          || 0,
+              compile_attempts:        mlPrediction.features?.compile_attempts        || 0,
+              error_frequency:         mlPrediction.features?.error_frequency         || 0,
+              code_growth_rate:        mlPrediction.features?.code_growth_rate        || 0,
+              idle_ratio:              mlPrediction.features?.idle_ratio              || 0,
+              focus_loss_count:        mlPrediction.features?.focus_loss_count        || 0,
+              off_screen_events_count: mlPrediction.features?.off_screen_events_count || 0,
+              backspace_ratio:         mlPrediction.features?.backspace_ratio         || 0,
+            },
+            codeFeatures: mlPrediction.codeAnalysis || {},
+            humanLabel:   classification,
+            numericLabel,
+            mlLabel:     mlPrediction.classification,
+            mlScore:     mlPrediction.authenticityScore,
+            wasCorrect:  mlPrediction.classification === classification,
+            language:        session.language,
+            testCasesPassed: session.testCasesPassed,
+            totalTestCases:  session.totalTestCases,
+            finalScore:      session.finalScore,
+          });
+          console.log(`📚 Training sample saved for session ${session._id} — label: ${classification}`);
+        }
+      } catch (tdErr) {
+        console.warn('⚠️  Could not save training data sample:', tdErr.message);
+      }
+    }
 
     res.json({ message: 'Session review updated', session });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/recruiter/model-stats
+const getModelStats = async (req, res) => {
+  try {
+    const totalSamples  = await TrainingData.countDocuments();
+    const genuineCount  = await TrainingData.countDocuments({ humanLabel: 'Genuine' });
+    const suspiciousCount = await TrainingData.countDocuments({ humanLabel: 'Suspicious' });
+    const reviewCount   = await TrainingData.countDocuments({ humanLabel: 'Review Needed' });
+    const correctCount  = await TrainingData.countDocuments({ wasCorrect: true });
+    const modelAccuracy = totalSamples > 0 ? ((correctCount / totalSamples) * 100).toFixed(1) : 0;
+
+    // Fetch ML service stats
+    let mlStats = null;
+    try {
+      const { data } = await axios.get(`${ML_URL}/model-stats`, { timeout: 5000 });
+      mlStats = data;
+    } catch (_) {
+      mlStats = { model_loaded: false, model_type: 'Unknown', last_trained: null, accuracy: 0 };
+    }
+
+    res.json({
+      trainingData: {
+        total:       totalSamples,
+        genuine:     genuineCount,
+        suspicious:  suspiciousCount,
+        reviewNeeded: reviewCount,
+        modelAccuracyOnRealData: parseFloat(modelAccuracy),
+      },
+      mlService: mlStats,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /api/recruiter/retrain
+// Sends all labeled TrainingData to the ML service for retraining
+const retrainModel = async (req, res) => {
+  try {
+    const samples = await TrainingData.find().lean();
+
+    if (samples.length === 0 && !req.body.forceWithSynthetic) {
+      return res.status(400).json({
+        message: 'No labeled training data yet. Review and confirm some sessions first, or pass forceWithSynthetic:true.',
+      });
+    }
+
+    // Map to ML service schema
+    const mlSamples = samples.map(s => ({
+      typing_speed:            s.behavioralFeatures?.typing_speed            || 0,
+      average_pause_duration:  s.behavioralFeatures?.average_pause_duration  || 0,
+      paste_ratio:             s.behavioralFeatures?.paste_ratio             || 0,
+      edit_frequency:          s.behavioralFeatures?.edit_frequency          || 0,
+      compile_attempts:        s.behavioralFeatures?.compile_attempts        || 0,
+      error_frequency:         s.behavioralFeatures?.error_frequency         || 0,
+      code_growth_rate:        s.behavioralFeatures?.code_growth_rate        || 0,
+      idle_ratio:              s.behavioralFeatures?.idle_ratio              || 0,
+      focus_loss_count:        s.behavioralFeatures?.focus_loss_count        || 0,
+      off_screen_events_count: s.behavioralFeatures?.off_screen_events_count || 0,
+      backspace_ratio:         s.behavioralFeatures?.backspace_ratio         || 0,
+      label:                   s.numericLabel ?? 1,
+    }));
+
+    const { data } = await axios.post(
+      `${ML_URL}/retrain`,
+      {
+        samples:           mlSamples,
+        include_synthetic: true,
+        synthetic_boost:   req.body.syntheticBoost || 500,
+      },
+      { timeout: 120000 }   // up to 2 min for large retrains
+    );
+
+    console.log(`✅ Model retrained — ${data.real_samples} real + ${data.synthetic_samples} synthetic samples, accuracy: ${data.accuracy}%`);
+    res.json(data);
+  } catch (err) {
+    console.error('Retrain error:', err.message);
+    res.status(500).json({ message: err.response?.data?.detail || err.message });
   }
 };
 
@@ -390,4 +524,5 @@ module.exports = {
   createQuestion, getQuestions, deleteQuestion,
   createAssessment, getAssessments, getAssessmentById, updateAssessment, addQuestionsToAssessment, removeQuestionFromAssessment,
   updateSessionReview,
+  getModelStats, retrainModel,
 };

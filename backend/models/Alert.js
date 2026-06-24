@@ -14,6 +14,8 @@ const alertSchema = new mongoose.Schema({
       'rapid_compile',
       'focus_loss',
       'suspicious_pattern',
+      'off_screen_gaze',
+      'camera_denied',
     ],
     required: true,
   },

@@ -93,6 +93,13 @@ const setupSocket = (io) => {
             case 'blur':
               telemetry.totalBlurEvents++;
               break;
+            case 'off_screen_gaze':
+              telemetry.totalOffScreenEvents++;
+              io.to(`watch:${sessionId}`).emit('live_alert', {
+                type: 'off_screen_gaze', severity: 'medium',
+                message: `Off-screen gaze detected for ${socket.user.name}`, timestamp: event.timestamp,
+              });
+              break;
             case 'compile':
               telemetry.compilationCount++;
               break;

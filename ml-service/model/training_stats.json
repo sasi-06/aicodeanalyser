@@ -1,0 +1,8 @@
+{
+  "last_trained": "2026-06-24T06:24:04.608136+00:00",
+  "total_samples_used": 300,
+  "real_samples": 0,
+  "synthetic_samples": 300,
+  "accuracy": 100.0,
+  "model_type": "GradientBoostingClassifier"
+}
