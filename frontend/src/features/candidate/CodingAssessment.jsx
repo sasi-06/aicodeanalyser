@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 
 import Navbar from '../../components/Navbar';
-import TelemetryStats from '../../components/TelemetryStats';
+
 import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
 import { getSocket } from '../../services/socket';
@@ -770,13 +770,11 @@ export default function CodingAssessment() {
 
       {/* Proctoring Header */}
       <div className="mt-16 bg-[#0B0F1A] border-b border-white/5 px-6 py-4 flex items-center justify-between z-10">
-         <div className="flex items-center gap-8">
+         <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
                <div className="p-2 rounded-lg bg-blue-500/10"><Clock className="text-blue-500" size={18} /></div>
                <span className="text-white font-black text-xl tracking-tighter tabular-nums">{formatTimer(timer)}</span>
             </div>
-            
-            <TelemetryStats stats={telemetryStats} />
          </div>
 
          <div className="flex items-center gap-4">

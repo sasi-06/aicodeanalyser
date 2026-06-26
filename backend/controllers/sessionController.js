@@ -331,15 +331,30 @@ const generateQuestionsForSession = async (req, res) => {
     const session = await InterviewSession.findById(id).populate('question');
     if (!session) return res.status(404).json({ message: 'Session not found' });
 
-    // Generate questions if not already generated
+    // Generate questions if not already generated for this session
     if (!session.aiGeneratedQuestions || session.aiGeneratedQuestions.length === 0) {
+
+      // ── Fetch ALL previously asked question texts across every session ──────
+      const allPastSessions = await InterviewSession.find(
+        { _id: { $ne: id }, 'aiGeneratedQuestions.0': { $exists: true } },
+        { 'aiGeneratedQuestions.questionText': 1 }
+      ).lean();
+
+      const usedQuestions = new Set(
+        allPastSessions.flatMap(s =>
+          (s.aiGeneratedQuestions || []).map(q => q.questionText.trim().toLowerCase())
+        )
+      );
+      // ────────────────────────────────────────────────────────────────────────
+
       const generated = await generateConceptualQuestions(
         session.question.description,
         code || '',
-        session.language
+        session.language,
+        usedQuestions   // pass blocklist
       );
       session.aiGeneratedQuestions = generated;
-      session.finalCode = code || ''; // Save intermediate code state
+      session.finalCode = code || '';
       await session.save();
     }
 

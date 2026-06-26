@@ -487,11 +487,11 @@ const WorkflowSection = () => {
               <div className="mt-8 pt-8 border-t border-slate-700/50">
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center font-bold text-blue-400">
-                    MD
+                    SSP
                   </div>
                   <div>
-                    <p className="font-semibold">Marius Dan</p>
-                    <p className="text-sm text-slate-400">Sr. Frontend Engineer</p>
+                    <p className="font-semibold">Sasisivaprakash M</p>
+                    <p className="text-sm text-slate-400">CSE</p>
                   </div>
                 </div>
               </div>
